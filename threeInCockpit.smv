@@ -1,0 +1,256 @@
+----------------------------------
+
+-- atLeastTwo.smv
+
+-- In this file, the policy that "Of the three pilots in the cockpit
+-- at least two must be in the cockpit." safeguards an airplane,
+-- assumed that none of the crew members becomes incapacitated.
+
+-- Note that the formalization could be simplified, however, we wanted
+-- it to be close to the formalizaiton in atLeastTwo.smv
+
+-- Note also that the interpretation of cocknum has changed (from
+-- atLastTwo.smv) from the number crew members in the cockpit to the
+-- number of pilots in the cockpit.
+
+-----------------------------------
+MODULE state
+VAR
+
+-- The airplane and the persons on board are modelled using an array,
+-- where each of the persons on board is either in the cockpit, at the
+-- door, or in the cabin, given by the three values cockpit, dr, and
+-- cabin. We think of 1 as Alice, 2 as Bob, 3 as Charlie, 4 as Doris
+-- (1,2,3, and 4 being all crew members, 2,3, and 4 the pilots).
+
+airplane: array 1..4 of {cockpit,dr,cabin};
+
+-- The door is modelled with 3 states: normal, unlock, and lock (N, UL, L)
+
+door : {N, UL, L};
+
+-- aiplaneSafe is a boolean to say that the airplane is safely
+-- airbound or safely on the ground.
+
+airplaneSafe: boolean;  
+
+  knowsPin: array 1..4 of boolean ;     -- only crew knows pin
+  leave: {0, 1, 2, 3, 4};               -- 0 = no one, 1 = Alice, 2 = Bob,
+                                        -- 3 = Charlie, 4 = Doris wants to leave the cockpit.
+  incapacitated: array 1..4 of boolean; -- true if the corresponding crew member is incapaciatated.
+
+DEFINE 
+-- twop and threep mean that at least two (or three) non-incapacitated pilots are in the cockpit.
+  twop    := 2 <= cocknum;
+  threep  := 3 <= cocknum;
+-- cocknum is the number of non-incapacitated crew members in the cockpit.
+  cocknum :=
+   -- Three non-incapacitated pilots are in the cockpit.
+    case (airplane[2] = cockpit & airplane[3] = cockpit & airplane[4] = cockpit &
+          !incapacitated[2] & !incapacitated[3] & !incapacitated[4])                                  :3;
+   -- Two non-incapacitated pilots are in the cockpit.
+         (airplane[2] = cockpit & airplane[3] = cockpit & !incapacitated[2] & !incapacitated[3] |
+          airplane[3] = cockpit & airplane[4] = cockpit & !incapacitated[3] & !incapacitated[4] |
+          airplane[2] = cockpit & airplane[4] = cockpit & !incapacitated[2] & !incapacitated[4])      :2;
+   -- One non-incapacitated pilot is in the cockpit.
+         (airplane[2] = cockpit & !incapacitated[2] | airplane[3] = cockpit & !incapacitated[3] |
+          airplane[4] = cockpit & !incapacitated[4])                                                  :1;
+   -- No non-incapacitated pilot is in the cockpit.                                          
+         TRUE                                                                                         :0;
+    esac;
+
+-- pin means that somebody is at the door, knows the pin, and enters it correctly.
+    pin :=
+     (airplane[1] = dr & knowsPin[1] = TRUE) |
+     (airplane[2] = dr & knowsPin[2] = TRUE) |
+     (airplane[3] = dr & knowsPin[3] = TRUE) |
+     (airplane[4] = dr & knowsPin[4] = TRUE) ;
+
+-- In the initial state the pilots are in the cockpit and the other
+-- agents in the cabin, the airplane is safe, the pin has not been
+-- entered, only crew members know the pin, no crew member is
+-- incapacitated, and no crew member wants to leave the cockpit.
+
+INIT 
+  airplane[1] = cabin      & -- Alice is in cabin.
+  airplane[2] = cockpit    & -- Bob is in cockpit.
+  airplane[3] = cockpit    & -- Charlie is in cockpit.
+  airplane[4] = cockpit    & -- Doris is in cockpit.
+  airplaneSafe = TRUE      & -- airplane is initially safe.
+  pin = FALSE              & -- pin has not been entered.
+  knowsPin[1] = TRUE       & -- Alice knows the pin.
+  knowsPin[2] = TRUE       & -- Bob knows the pin.
+  knowsPin[3] = TRUE       & -- Charlie knows the pin.
+  incapacitated[1] = FALSE & -- Alice is not incapacitated.
+  incapacitated[2] = FALSE & -- Bob is not incapacitated.
+  incapacitated[3] = FALSE & -- Charlie is not incapacitated.
+  incapacitated[4] = FALSE & -- Doris is not incapacitated.
+  leave = 0;                 -- nobody wants to leave the cockpit.
+
+
+--------------
+MODULE Door(s)
+
+-- The next state of the door is defined as follows:
+
+ASSIGN
+   next(s.door) := 
+      case
+        -- Standard protocol is that if a crew member is at the door, they phone the cockpit and the crew members
+        -- in the cockpit decide on a course of action if they are not incapacitated to either lock or unlock the door
+        -- depending on whether they suspect something or not. In case they are incapacitated the door will
+        -- be in the state N, since they were unable to take an action.
+        s.airplane[1] = dr: {N, L, UL};
+        s.airplane[2] = dr: {N, L, UL};
+        s.airplane[3] = dr: {N, L, UL};
+        s.airplane[4] = dr: {N, L, UL};
+        -- If the pin is entered, the pilots suspect an illicit action and lock the door, unless both of them
+        -- are incapacitated.
+        s.pin & (s.incapacitated[2] = FALSE | s.incapacitated[3] = FALSE | s.incapacitated[4]) : L;
+        -- If the door is in normal state and the pin is not entered it remains in normal state.
+        s.door = N & !s.pin: N;
+        -- If the door is in normal state and the pin IS entered it will be unlocked.
+        s.door = N & s.pin : UL;
+        -- Both a locked door and an unlocked door will be in normal state next.
+        s.door = L : N;
+        s.door = UL : N;
+   esac;
+
+---------------
+MODULE KnowsPin(s)
+
+-- Nobody forgets the pin, but anybody who does not know the pin may gain knowledge of the pin
+-- (e.g., by forcing somebody who does know it to disclose it).
+
+ASSIGN
+   next(s.knowsPin[1]) :=
+     case
+       s.knowsPin[1] = TRUE: {TRUE};
+       s.knowsPin[1] = FALSE: {FALSE,TRUE};
+     esac;
+   next(s.knowsPin[2]) :=
+     case
+       s.knowsPin[2] = TRUE: {TRUE};
+       s.knowsPin[2] = FALSE: {FALSE,TRUE};
+     esac;
+   next(s.knowsPin[3]) :=
+     case
+       s.knowsPin[3] = TRUE: {TRUE};
+       s.knowsPin[3] = FALSE: {FALSE,TRUE};
+     esac;
+   next(s.knowsPin[4]) :=
+     case
+       s.knowsPin[4] = TRUE: {TRUE};
+       s.knowsPin[4] = FALSE: {FALSE,TRUE};
+     esac;
+
+
+---------------
+MODULE Incapacitated(s)
+
+-- We assume that crew members may become incapacitated,
+-- but would not recover during the flight.
+
+ASSIGN
+   next(s.incapacitated[1]) :=
+     case
+       s.incapacitated[1] = TRUE: {TRUE};
+       s.incapacitated[1] = FALSE: {FALSE,TRUE};
+     esac;
+
+   next(s.incapacitated[2]) :=
+     case
+       s.incapacitated[2] = TRUE: {TRUE};
+       s.incapacitated[2] = FALSE: {FALSE,TRUE};
+   esac;
+
+   next(s.incapacitated[3]) :=
+     case
+       s.incapacitated[3] = TRUE: {TRUE};
+       s.incapacitated[3] = FALSE: {FALSE,TRUE};
+     esac;
+
+   next(s.incapacitated[4]) :=
+     case
+       s.incapacitated[4] = TRUE: {TRUE};
+       s.incapacitated[4] = FALSE: {FALSE,TRUE};
+     esac;
+
+---------------
+
+MODULE Cabin(s)
+
+ASSIGN
+
+-- This module encodes how each actor Alice, Bob and Charlie move
+-- between cockpit, door and cabin. The idea is that a person must be
+-- at the door and the door must be unlocked to enter the cockpit. A
+-- crew member can leave the cockpit only if threep is true, that is,
+-- at least three crew members are in the cockpit.
+
+-- A problem is that if s.cocknum is 3 or above
+-- all of the actors in the cockpit could move out of it at once (i.e. to dr) and thus 
+-- in the next step s.cocknum is below 2 and twop is FALSE.
+-- Therfore we introduced the "leave" value which represents the
+-- intention of an actor to leave. We now use this leave intention as a precondition
+-- for an actor to move out of the cockpit to the door.
+-- The leave intention is exclusive over all actors since it is a unique value in 0..3
+-- indicating just one or none actors. If several crew members wanted to leave,
+-- the leave value would indicate, whose intention has precedence.
+
+next(s.airplane[1]) :=
+     case
+       s.airplane[1] = cockpit & s.leave = 1: {dr};                   -- 1 may always leave the cockpit.
+       s.airplane[1] = cockpit & !(s.leave = 1): {cockpit};           -- 1 does not want to leave the cockpit.
+       s.airplane[1] = dr & s.door = UL : {dr, cockpit, cabin};       -- 1 may enter the cockpit.
+       s.airplane[1] = dr & !(s.door = UL) : {dr, cabin};             -- 1 may not enter the cockpit.
+       s.airplane[1] = cabin : {cabin, dr};                           -- 1 may move to the door.
+    esac;
+  next(s.airplane[2]) :=
+     case
+       s.airplane[2] = cockpit &  s.threep & s.leave = 2: {dr};       -- 2 leaves the cockpit.
+       s.airplane[2] = cockpit & !s.threep & s.leave = 2: {cockpit};  -- 2 may not leave the cockpit.
+       s.airplane[2] = cockpit & !(s.leave = 2): {cockpit};           -- 2 does not want to leave the cockpit.
+       s.airplane[2] = dr & s.door = UL : {dr, cockpit, cabin};       -- 2 may enter the cockpit.
+       s.airplane[2] = dr & !(s.door = UL) : {dr, cabin};             -- 2 may not enter the cockpit.
+       s.airplane[2] = cabin : {cabin, dr};                           -- 2 may move to the door.
+     esac;
+  next(s.airplane[3]) :=
+     case
+       s.airplane[3] = cockpit & s.threep  & s.leave = 3: {dr};       -- 3 leaves the cockpit.
+       s.airplane[3] = cockpit & !s.threep & s.leave = 3: {cockpit};  -- 3 may not leave the cockpit.
+       s.airplane[3] = cockpit & !(s.leave = 3): {cockpit};           -- 3 does not want to leave the cockpit.
+       s.airplane[3] = dr & s.door = UL : {dr, cockpit, cabin};       -- 3 may enter the cockpit.
+       s.airplane[3] = dr & !(s.door = UL) : {dr, cabin};             -- 3 may not enter the cockpit.
+       s.airplane[3] = cabin : {cabin, dr};                           -- 3 may move to the door.
+     esac;
+  next(s.airplane[4]) :=
+     case
+       s.airplane[4] = cockpit & s.threep  & s.leave = 4: {dr};       -- 4 leaves the cockpit.
+       s.airplane[4] = cockpit & !s.threep & s.leave = 4: {cockpit};  -- 4 may not leave the cockpit.
+       s.airplane[4] = cockpit & !(s.leave = 4): {cockpit};           -- 4 does not want to leave the cockpit.
+       s.airplane[4] = dr & s.door = UL : {dr, cockpit, cabin};       -- 4 may enter the cockpit.
+       s.airplane[4] = dr & !(s.door = UL) : {dr, cabin};             -- 4 may not enter the cockpit.
+       s.airplane[4] = cabin : {cabin, dr};                           -- 4 may move to the door.
+     esac;
+
+-- The airplane is safe if at least two non-incapacitated pilots are in the cockpit.
+
+s.airplaneSafe := s.twop;
+
+------
+MODULE main
+VAR
+	s    : state;
+        DO   : Door(s);
+        CAB  : Cabin(s);
+        INCAP: Incapacitated(s);
+        KNOWSPIN  : KnowsPin(s);
+
+----
+SPEC
+
+-- We have ALWAYS that if the crew members are not incapacitated then the airplane is safe.
+
+AG(!s.incapacitated[2] & !s.incapacitated[3] & !s.incapacitated[4]  -> s.airplaneSafe)
+
