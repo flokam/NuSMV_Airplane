@@ -252,5 +252,8 @@ SPEC
 
 -- We have ALWAYS that if the crew members are not incapacitated then the airplane is safe.
 
-AG(!s.incapacitated[2] & !s.incapacitated[3] & !s.incapacitated[4]  -> s.airplaneSafe)
+AG(!s.incapacitated[2] & !s.incapacitated[3] & !s.incapacitated[4]  -> s.airplaneSafe) &
+
+-- it is always possible for the flight attendant to open the door if the two pilots are incapacitated.
+AG EF(!s.incapacitated[1] & s.incapacitated[2] & s.incapacitated[3] ->  (s.airplane[1] = cockpit))
 
